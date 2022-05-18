@@ -1,137 +1,145 @@
-#include "shell.h"
+#include "_getline.h"
 
 /**
- * salida3 - normal out
- * @m: copy of environmental variables
- * @e: number of elements in m
+ * __getline - gets a line of chars from a file descriptor
+ * @fd: the file descriptor to read
+ *
+ * Return: pointer to the line
  */
-void salida3(char **m, int e)
+char *__getline(const int fd)
 {
-	free_grid(m, e);
-	exit(currentstatus(NULL));
-}
-/**
- * salida2 - out with double Ctrl+D
- *@m: copy of environmental variables
- *@e: number of elements in m
- *@line: input of user
- */
-void salida2(char **m, int e, char *line)
-{
-	free(line);
-	free_grid(m, e);
-	write(STDIN_FILENO, "#cisfun$ ", 9);
-	write(STDIN_FILENO, "\n", 1);
-	exit(currentstatus(NULL));
-}
-/**
- * salida1 - normal out
- * @m: copy of environmental variables
- * @e: number of elements in m
- */
-void salida1(char **m, int e)
-{
-	free_grid(m, e);
-	write(STDIN_FILENO, "\n", 1);
-	exit(currentstatus(NULL));
-}
-/**
- * _getline - function to read what the user writes
- * @a: pointer to loop counter
- * @e: length of m
- * @m: copy of environmental
- * Return: line in sucess otherwise NULL.
- */
-char  *_getline(int *a, char **m, int e)
-{
-	char letter[1] = {0}, *line = NULL;
-	size_t bufsize = 0;
-	static int num = 1;
+	static FdBuf head;
+	FdBuf *fb = NULL, *temp;
+	char *line = NULL;
 
-	if (num == 2)
-	salida2(m, e, line);
-	for (; (num != 0); bufsize = 0, free(line))
+	if (fd == -1)
 	{
-		write(STDIN_FILENO, "#cisfun$ ", 9);
-		*a = *a + 1;
-		signal(SIGINT, _signal);
-		for (; ((num = read(STDIN_FILENO, letter, 1)) > 0); bufsize++)
+		if (head.buf)
+			head.buf = (free(head.buf), NULL);
+		for (fb = head.next; fb;)
 		{
-			if (bufsize == 0)
-				line = _calloc(bufsize + 3, sizeof(char));
-			else
-				line = _realloc(line, bufsize, bufsize + 3);
-			if (!line)
+			if (fb->buf)
 			{
-				num = 0;
-				break;
+				free(fb->buf);
+				fb->buf = NULL;
 			}
-			line[bufsize] = letter[0], line[bufsize + 1] = '\n';
-			line[bufsize + 2] = '\0';
-			if (line[bufsize] == '\n')
-				break;
+			temp = fb;
+			fb = fb->next;
+			free(temp);
 		}
-		if (num == 0 && bufsize == 0)
-			break;
-		else if (num == 0 && bufsize != 0)
-		{
-			num = 2;
-			break;
-		}
-		else if (line[0] != '\n')
-			return (line);
+		_memset((void *)&head, 0, sizeof(head));
+		return (NULL);
 	}
-	if (num == 0)
-		salida1(m, e);
+	fb = get_fdbuf(&head, fd);
+	if (fb)
+		line = __read_buf(fb);
+	if (line && line[0] == '\n' && !line[1])
+		line[0] = 0;
 	return (line);
 }
-/**
- * _getlineav - function to read what the user writes
- * @a: pointer to loop counter
- * @e: length of m
- * @m: copy of environmental
- * @av: arguments in input
- * Return: line in sucess otherwise NULL.
- */
-char  *_getlineav(int *a, char **m, int e, char **av)
-{
-	char letter[1] = {0}, *li = NULL;
-	size_t bz = 0;
-	static unsigned int num = 1;
-	static int  fd;
 
-	for (; (num != 0); bz = 0, free(li))
+/**
+ * __read_buf - reads into the buffer
+ * @fb: the fd buf struct
+ *
+ * Return: 0 on success else -1 on error.
+ */
+char *__read_buf(FdBuf *fb)
+{
+	char buf[READ_SIZE + 1], *p, *line;
+	ssize_t r = 0;
+
+	p = __strchr(fb->buf + fb->i, '\n', fb->len - fb->i);
+	if (!fb->len || fb->i >= fb->len || !p)
 	{
-		fd = open(av[1], O_RDONLY);
-		if (fd == -1)
-		{ close(fd), free_grid(m, e);
-			write(STDERR_FILENO, av[0], _strlen(av[0]));
-			write(STDERR_FILENO, ": 0: ", 5);
-			write(STDERR_FILENO, "Can't open ", 11);
-			write(STDERR_FILENO, av[1], _strlen(av[1]));
-			write(STDERR_FILENO, "\n", 1), exit(127);
-		}
-		*a = *a + 1;
-		while ((num = read(fd, letter, 1)) > 0)
+		while (1)
 		{
-			if (bz == 0)
-				li = _calloc(bz + 3, sizeof(char));
-			else
-				li = _realloc(li, bz, bz + 3);
-			if (!li)
+			r = read(fb->fd, buf, READ_SIZE);
+			if (r < 0 || (r == 0 && !fb->len))
+				return (fb->buf ? (free(fb->buf), NULL) : NULL);
+			if (r == 0)
 			{
-				num = 0;
+				p = fb->buf + fb->len;
 				break;
 			}
-			li[bz] = letter[0], li[bz + 1] = '\n';
-			li[bz + 2] = '\0', bz++;
+			fb->buf = _realloc(fb->buf, fb->len, fb->len + r + 1);
+			if (!fb->buf)
+				return (NULL);
+			_memcpy((void *)(fb->buf + fb->len), buf, r), fb->len += r;
+			p = __strchr(fb->buf + (fb->len - r), '\n', r);
+			if (p)
+			{
+				fb->buf[fb->len] = 0;
+				break;
+			}
 		}
-		if (num == 0 && bz == 0)
-			break;
-		else if (li[0] != '\n')
-			return (li);
 	}
-	if (num == 0)
-		close(fd), salida3(m, e);
-	return (li);
+	*p = '\0';
+	line = malloc(1 + (p - (fb->buf + fb->i)));
+	if (!line)
+		return (NULL);
+	_memcpy((void *)line, fb->buf + fb->i, 1 + (p - (fb->buf + fb->i)));
+	fb->i = (p - fb->buf) + 1;
+	if (fb->i >= fb->len)
+	{
+		fb->i = fb->len = 0;
+		fb->buf = (free(fb->buf), NULL);
+	}
+	return (line);
+}
+
+/**
+ * get_fdbuf - adds a car to linked list
+ * @head: pointer to head node
+ * @fd: file descriptor of buffer to get
+ * Return: pointer to the fd buf node
+ */
+FdBuf *get_fdbuf(FdBuf *head, const int fd)
+{
+	FdBuf *node;
+
+	if (!head->buf && !head->fd && !head->next)
+	{
+		head->fd = fd;
+		return (head);
+	}
+	for (; head->next && head->next->fd <= fd; head = head->next)
+		;
+	if (head->fd == fd)
+		return (head);
+	node = malloc(sizeof(*node));
+	if (!node)
+		return (NULL);
+	if (fd < head->fd) /* need to copy head over and replace */
+	{
+		_memcpy((void *)node, (void *)head, sizeof(*head));
+		_memset((void *)head, 0, sizeof(*head));
+		head->fd = fd;
+		head->next = node;
+		return (head);
+	}
+	_memset((void *)node, 0, sizeof(*node));
+	node->fd = fd;
+	node->next = head->next;
+	head->next = node;
+	return (node);
+}
+
+/**
+ **__strchr - locates a character in a string
+ *@s: the string to be parsed
+ *@c: the character to look for
+ *@size: number of bytes to search
+ *Return: (s) a pointer to the memory area s
+ */
+char *__strchr(char *s, char c, ssize_t size)
+{
+	if (!s)
+		return (NULL);
+	do {
+		if (*s == c)
+			return (s);
+		s++;
+	} while (--size > 0);
+	return (NULL);
 }
